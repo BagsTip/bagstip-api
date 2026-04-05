@@ -22,20 +22,21 @@ async function checkCode(username, code) {
   }
 
   // ──── Real Mode ──────────────────────────────
-  console.log(`🔍 [LIVE] Verifying code "${code}" for @${username} via scraping...`);
+  console.log(`🔍 [LIVE] Verifying code "${code}" for @${username} via X API...`);
   try {
-    const url = `https://twitter.com/${username}`;
+    const url = `https://api.twitter.com/2/users/by/username/${username}?user.fields=description`;
     const res = await axios.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' // to bypass some blocks
+        Authorization: `Bearer ${process.env.X_BEARER_TOKEN}`
       }
     });
     
     // Check if the HTML contains the code
-    const isVerified = res.data.includes(code);
+    const bio = res.data.data?.description || '';
+    const isVerified = bio.includes(code);
     return isVerified;
   } catch (err) {
-    console.error(`❌ Scraping Error for @${username}:`, err.message);
+    console.error(`❌ X API Error for @${username}:`, err.response?.data || err.message);
     return false;
   }
 }
