@@ -22,6 +22,7 @@ const testTips = [
   { username: 'vitalikbuterin', amount: 1.0 },
   { username: 'vitalikbuterin', amount: 0.25 },
   { username: 'jack', amount: 2.0 },
+  { username: 'demo', amount: 2.5 },
 ];
 
 const insertAll = db.transaction(() => {

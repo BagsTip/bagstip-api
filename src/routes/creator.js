@@ -54,6 +54,11 @@ router.get('/:handle', (req, res, next) => {
     const tipsCount = stats.tipsCount || 0;
     const pendingTipsCount = stats.pendingTipsCount || 0;
 
+    const hasPending = pendingAmount > 0;
+    const message = hasPending 
+       ? `You have ${Math.round(pendingAmount * 1e6) / 1e6} SOL waiting 👀`
+       : "You're all caught up! 🚀";
+
     // Response object
     res.json({
       success: true,
@@ -64,7 +69,8 @@ router.get('/:handle', (req, res, next) => {
       claimedAmount: Math.round(claimedAmount * 1e6) / 1e6,
       tipsCount,
       pendingTipsCount,
-      hasPendingTips: pendingAmount > 0,
+      hasPendingTips: hasPending,
+      message,
       recentTips: recentTips.map(tip => ({
         ...tip,
         amount_sol: Math.round(tip.amount_sol * 1e6) / 1e6
