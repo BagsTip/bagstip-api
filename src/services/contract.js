@@ -1,4 +1,4 @@
-const { Connection, PublicKey, Transaction, SystemProgram, Keypair, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+const { Connection, PublicKey, Transaction, SystemProgram, Keypair, LAMPORTS_PER_SOL, sendAndConfirmTransaction } = require('@solana/web3.js');
 
 /**
  * Contract Service
@@ -31,17 +31,30 @@ async function transfer(walletAddress, amountSol) {
     const connection = new Connection(process.env.RPC_URL || 'https://api.devnet.solana.com');
     
     // NOTE: In a real app, you'd use a secure KMS or encrypted env var for the private key.
-    // For this demo, we'll look for a base58 private key string.
     if (!process.env.ESCROW_PRIVATE_KEY) {
       throw new Error('ESCROW_PRIVATE_KEY not configured for LIVE mode');
     }
 
-    // Implementation sketch:
-    // const fromKeypair = Keypair.fromSecretKey(bs58.decode(process.env.ESCROW_PRIVATE_KEY));
-    // const toPublicKey = new PublicKey(walletAddress);
-    // ... create and send transaction
+    const secret = JSON.parse(process.env.ESCROW_PRIVATE_KEY);
+    const escrow = Keypair.fromSecretKey(Uint8Array.from(secret));
     
-    return { txHash: 'live_tx_placeholder_requires_configured_key' };
+    const receiver = new PublicKey(walletAddress);
+
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: escrow.publicKey,
+        toPubkey: receiver,
+        lamports: amountSol * LAMPORTS_PER_SOL, // SOL → lamports
+      })
+    );
+
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      transaction,
+      [escrow]
+    );
+    
+    return { txHash: signature };
   } catch (err) {
     console.error('❌ Solana Transfer Error:', err.message);
     throw err;

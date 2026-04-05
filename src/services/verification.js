@@ -1,8 +1,10 @@
+const axios = require('axios');
+
 /**
  * Verification Service
  *
- * Mock mode:  always returns true (hackathon shortcut)
- * Real mode:  check X bio or tweet for the verification code (future)
+ * Mock mode:  always returns true (if VERIFICATION_MODE=mock)
+ * Real mode:  check X bio or tweet for the verification code using scraping
  */
 
 /**
@@ -12,17 +14,30 @@
  * @returns {Promise<boolean>}
  */
 async function checkCode(username, code) {
-  // ──── Mock Mode (default) ────────────────────────────
-  console.log(`🔍 [MOCK] Verifying code "${code}" for @${username} → auto-pass`);
-  return true;
+  const mode = process.env.VERIFICATION_MODE || 'mock';
 
-  // ──── Real Mode (uncomment when ready) ───────────────
-  // const response = await fetch(`https://api.twitter.com/2/users/by/username/${username}`, {
-  //   headers: { Authorization: `Bearer ${process.env.X_BEARER_TOKEN}` }
-  // });
-  // const data = await response.json();
-  // const bio = data.data?.description || '';
-  // return bio.includes(code);
+  if (mode === 'mock') {
+    console.log(`🔍 [MOCK] Verifying code "${code}" for @${username} → auto-pass`);
+    return true;
+  }
+
+  // ──── Real Mode ──────────────────────────────
+  console.log(`🔍 [LIVE] Verifying code "${code}" for @${username} via scraping...`);
+  try {
+    const url = `https://twitter.com/${username}`;
+    const res = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' // to bypass some blocks
+      }
+    });
+    
+    // Check if the HTML contains the code
+    const isVerified = res.data.includes(code);
+    return isVerified;
+  } catch (err) {
+    console.error(`❌ Scraping Error for @${username}:`, err.message);
+    return false;
+  }
 }
 
 module.exports = { checkCode };

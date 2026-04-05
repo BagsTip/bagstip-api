@@ -250,6 +250,7 @@ router.post('/release', async (req, res, next) => {
       username,
       total_released_sol: roundedTotal,
       tx_hash: txHash,
+      explorer: `https://explorer.solana.com/tx/${txHash}?cluster=devnet`,
       tips_claimed: pendingTips.length,
       wallet_address: walletAddress,
       message: `Successfully released ${roundedTotal} SOL to ${walletAddress}`,
