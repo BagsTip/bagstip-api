@@ -22,9 +22,11 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     status: 'running',
     endpoints: {
+      'POST /tip/log': 'Log a tip transaction from frontend',
+      'GET /creator/:handle': 'Get creator dashboard stats',
       'POST /claim/init': 'Start claim process — get verification code',
       'POST /claim/verify': 'Verify X account ownership',
-      'POST /claim/release': 'Release funds to wallet',
+      'POST /claim/release': 'Release funds from escrow to wallet',
     },
   });
 });
