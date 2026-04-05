@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const supabase = require('../db');
 
 // ─── Helper: normalize username ──────────────────────────
 function normalizeUsername(raw) {
@@ -12,7 +12,7 @@ function normalizeUsername(raw) {
  * GET /creator/:handle
  * Returns public stats for a creator's dashboard
  */
-router.get('/:handle', (req, res, next) => {
+router.get('/:handle', async (req, res, next) => {
   try {
     const handle = normalizeUsername(req.params.handle);
     if (!handle) {
@@ -22,37 +22,41 @@ router.get('/:handle', (req, res, next) => {
     }
 
     // Step 2: Query Creator Profile
-    const profile = db.prepare(`
-      SELECT wallet_address, is_verified, verified_at, created_at
-      FROM creators
-      WHERE username = ?
-    `).get(handle);
+    const { data: profile } = await supabase
+      .from('creators')
+      .select('wallet_address, is_verified, verified_at, created_at')
+      .eq('username', handle)
+      .single(); 
+      // Supabase returns null data (and a PGRST116 error) if not found on single()
+      // We'll just ignore the error gracefully if they don't exist yet.
 
     // Step 3 & 4: Query Pending and Claimed Amounts
-    const stats = db.prepare(`
-      SELECT 
-        SUM(CASE WHEN status = 'pending' THEN amount_sol ELSE 0 END) as pendingAmount,
-        SUM(CASE WHEN status = 'claimed' THEN amount_sol ELSE 0 END) as claimedAmount,
-        COUNT(*) as tipsCount,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendingTipsCount
-      FROM tips
-      WHERE username = ?
-    `).get(handle);
+    const { data: tips, error } = await supabase
+      .from('tips')
+      .select('*')
+      .eq('username', handle)
+      .order('created_at', { ascending: false });
 
-    // Step 6: Get Recent Tips
-    const recentTips = db.prepare(`
-      SELECT id, amount_sol, status, created_at
-      FROM tips
-      WHERE username = ?
-      ORDER BY created_at DESC
-      LIMIT 5
-    `).all(handle);
+    if (error) {
+      console.error('Supabase Query Error:', error);
+      throw { statusCode: 500, message: 'Failed to retrieve stats' };
+    }
 
-    // Handle null results from SUM (comes back as null if no rows match)
-    const pendingAmount = stats.pendingAmount || 0;
-    const claimedAmount = stats.claimedAmount || 0;
-    const tipsCount = stats.tipsCount || 0;
-    const pendingTipsCount = stats.pendingTipsCount || 0;
+    let pendingAmount = 0;
+    let claimedAmount = 0;
+    let pendingTipsCount = 0;
+
+    tips.forEach((tip) => {
+      if (tip.status === 'pending') {
+        pendingAmount += tip.amount_sol;
+        pendingTipsCount += 1;
+      } else if (tip.status === 'claimed') {
+        claimedAmount += tip.amount_sol;
+      }
+    });
+
+    const tipsCount = tips.length;
+    const recentTips = tips.slice(0, 5);
 
     const hasPending = pendingAmount > 0;
     const message = hasPending 

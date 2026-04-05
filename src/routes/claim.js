@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const supabase = require('../db');
 const verificationService = require('../services/verification');
 const contractService = require('../services/contract');
 
@@ -24,7 +24,7 @@ function generateCode() {
 //  POST /claim/init
 //  Start the claim process for a creator
 // ═══════════════════════════════════════════════════════════
-router.post('/init', (req, res, next) => {
+router.post('/init', async (req, res, next) => {
   try {
     const username = normalizeUsername(req.body.username);
     if (!username) {
@@ -34,12 +34,16 @@ router.post('/init', (req, res, next) => {
     }
 
     // Step 4A.3 – Check pending tips
-    const pendingTips = db
-      .prepare('SELECT * FROM tips WHERE username = ? AND status = ?')
-      .all(username, 'pending');
+    const { data: pendingTips, error: tipsErr } = await supabase
+      .from('tips')
+      .select('*')
+      .eq('username', username)
+      .eq('status', 'pending');
+
+    if (tipsErr) throw { statusCode: 500, message: tipsErr.message };
 
     // Step 4A.4 – If no tips
-    if (pendingTips.length === 0) {
+    if (!pendingTips || pendingTips.length === 0) {
       const err = new Error(`No pending tips found for @${username}`);
       err.statusCode = 400;
       throw err;
@@ -52,10 +56,16 @@ router.post('/init', (req, res, next) => {
     const expiryMinutes = parseInt(process.env.VERIFICATION_EXPIRY_MINUTES) || 10;
     const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
 
-    db.prepare(`
-      INSERT INTO claim_attempts (username, verification_code, status, expires_at)
-      VALUES (?, ?, 'pending', ?)
-    `).run(username, code, expiresAt);
+    const { error: insertErr } = await supabase
+      .from('claim_attempts')
+      .insert({
+        username,
+        verification_code: code,
+        status: 'pending',
+        expires_at: expiresAt
+      });
+      
+    if (insertErr) throw { statusCode: 500, message: insertErr.message };
 
     // Step 4A.7 – Calculate total
     const totalSol = pendingTips.reduce((sum, t) => sum + t.amount_sol, 0);
@@ -90,13 +100,17 @@ router.post('/verify', async (req, res, next) => {
     }
 
     // Step 4B.3 – Fetch latest pending attempt
-    const attempt = db
-      .prepare(
-        `SELECT * FROM claim_attempts
-         WHERE username = ? AND status = 'pending'
-         ORDER BY id DESC LIMIT 1`
-      )
-      .get(username);
+    const { data: attempts, error: fetchErr } = await supabase
+      .from('claim_attempts')
+      .select('*')
+      .eq('username', username)
+      .eq('status', 'pending')
+      .order('id', { ascending: false })
+      .limit(1);
+
+    if (fetchErr) throw { statusCode: 500, message: fetchErr.message };
+    
+    const attempt = attempts && attempts.length > 0 ? attempts[0] : null;
 
     // Step 4B.4 – If not found
     if (!attempt) {
@@ -109,9 +123,10 @@ router.post('/verify', async (req, res, next) => {
 
     // Step 4B.5 – Check expiry
     if (new Date(attempt.expires_at) < new Date()) {
-      db.prepare(
-        "UPDATE claim_attempts SET status = 'expired' WHERE id = ?"
-      ).run(attempt.id);
+      await supabase
+        .from('claim_attempts')
+        .update({ status: 'expired' })
+        .eq('id', attempt.id);
 
       const err = new Error(
         'Verification code has expired. Please call POST /claim/init to get a new code.'
@@ -120,7 +135,7 @@ router.post('/verify', async (req, res, next) => {
       throw err;
     }
 
-    // Step 4B.6 – Verify code (mock: always true)
+    // Step 4B.6 – Verify code
     const isValid = await verificationService.checkCode(
       username,
       attempt.verification_code
@@ -135,9 +150,10 @@ router.post('/verify', async (req, res, next) => {
     }
 
     // Step 4B.7 – Mark as verified
-    db.prepare(
-      "UPDATE claim_attempts SET status = 'verified', verified_at = datetime('now') WHERE id = ?"
-    ).run(attempt.id);
+    await supabase
+      .from('claim_attempts')
+      .update({ status: 'verified', verified_at: new Date().toISOString() })
+      .eq('id', attempt.id);
 
     // Step 4B.8 – Return success
     res.json({
@@ -162,87 +178,85 @@ router.post('/release', async (req, res, next) => {
     const walletAddress = req.body.wallet_address;
 
     // Validate inputs
-    if (!username) {
-      const err = new Error('Username is required');
-      err.statusCode = 400;
-      throw err;
-    }
+    if (!username) throw { statusCode: 400, message: 'Username is required' };
     if (!walletAddress || typeof walletAddress !== 'string' || walletAddress.trim() === '') {
-      const err = new Error('wallet_address is required');
-      err.statusCode = 400;
-      throw err;
+      throw { statusCode: 400, message: 'wallet_address is required' };
     }
 
     // Step 4C.3 – Fetch latest verified attempt
-    const attempt = db
-      .prepare(
-        `SELECT * FROM claim_attempts
-         WHERE username = ? AND status = 'verified'
-         ORDER BY id DESC LIMIT 1`
-      )
-      .get(username);
+    const { data: attempts, error: attemptErr } = await supabase
+      .from('claim_attempts')
+      .select('*')
+      .eq('username', username)
+      .eq('status', 'verified')
+      .order('id', { ascending: false })
+      .limit(1);
+
+    if (attemptErr) throw { statusCode: 500, message: attemptErr.message };
+    const attempt = attempts && attempts.length > 0 ? attempts[0] : null;
 
     // Step 4C.4 – If not verified
     if (!attempt) {
-      const err = new Error(
-        `No verified claim found for @${username}. Complete verification first.`
-      );
-      err.statusCode = 403;
-      throw err;
+      throw { statusCode: 403, message: `No verified claim found for @${username}. Complete verification first.` };
     }
 
     // Step 4C.5 – Fetch pending tips
-    const pendingTips = db
-      .prepare('SELECT * FROM tips WHERE username = ? AND status = ?')
-      .all(username, 'pending');
+    const { data: pendingTips, error: tipsErr } = await supabase
+      .from('tips')
+      .select('*')
+      .eq('username', username)
+      .eq('status', 'pending');
+
+    if (tipsErr) throw { statusCode: 500, message: tipsErr.message };
 
     // Step 4C.6 – If no tips
-    if (pendingTips.length === 0) {
-      const err = new Error(
-        `No pending tips to release for @${username}. Tips may have already been claimed.`
-      );
-      err.statusCode = 400;
-      throw err;
+    if (!pendingTips || pendingTips.length === 0) {
+      throw { statusCode: 400, message: `No pending tips to release for @${username}. Tips may have already been claimed.` };
     }
 
     // Step 4C.7 – Calculate total
     const totalSol = pendingTips.reduce((sum, t) => sum + t.amount_sol, 0);
     const roundedTotal = Math.round(totalSol * 1e6) / 1e6;
 
-    // Step 4C.8 – Call contract (mock)
+    // Step 4C.8 – Call contract (mock/live)
     const { txHash } = await contractService.transfer(walletAddress, roundedTotal);
 
-    // Step 4C.9 – Update DB in a transaction
-    const updateAll = db.transaction(() => {
-      // Mark all tips as claimed
-      const now = new Date().toISOString();
-      for (const tip of pendingTips) {
-        db.prepare(
-          "UPDATE tips SET status = 'claimed', claimed_at = ? WHERE id = ?"
-        ).run(now, tip.id);
-      }
+    const now = new Date().toISOString();
 
-      // Update claim attempt
-      db.prepare(
-        "UPDATE claim_attempts SET status = 'released', wallet_address = ? WHERE id = ?"
-      ).run(walletAddress, attempt.id);
+    // Step 4C.9 – Update DB 
+    // In Supabase, without writing a PL/pgSQL function, we do sequential updates.
+    // In a prod system, an RPC call handling these safely is recommended.
 
-      // Create or Update permanent Creator profile
-      const existingCreator = db.prepare('SELECT id FROM creators WHERE username = ?').get(username);
-      if (existingCreator) {
-        db.prepare(`
-          UPDATE creators 
-          SET wallet_address = ?, is_verified = 1, verified_at = ?
-          WHERE id = ?
-        `).run(walletAddress, now, existingCreator.id);
-      } else {
-        db.prepare(`
-          INSERT INTO creators (username, wallet_address, is_verified, verified_at)
-          VALUES (?, ?, 1, ?)
-        `).run(username, walletAddress, now);
-      }
-    });
-    updateAll();
+    // 1. Mark all pending tips as claimed
+    const tipIds = pendingTips.map(t => t.id);
+    await supabase
+      .from('tips')
+      .update({ status: 'claimed', claimed_at: now })
+      .in('id', tipIds);
+
+    // 2. Update claim attempt
+    await supabase
+      .from('claim_attempts')
+      .update({ status: 'released', wallet_address: walletAddress })
+      .eq('id', attempt.id);
+
+    // 3. Create or Update permanent Creator profile
+    const { data: existingCreator } = await supabase
+      .from('creators')
+      .select('id')
+      .eq('username', username)
+      .single();
+
+    if (existingCreator) {
+      await supabase
+        .from('creators')
+        .update({ wallet_address: walletAddress, is_verified: true, verified_at: now })
+        .eq('id', existingCreator.id);
+    } else {
+      await supabase
+        .from('creators')
+        .insert({ username, wallet_address: walletAddress, is_verified: true, verified_at: now });
+    }
 
     // Step 4C.10 – Return response
     res.json({

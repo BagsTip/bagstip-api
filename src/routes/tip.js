@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const supabase = require('../db');
 
 // ─── Helper: normalize username ──────────────────────────
 function normalizeUsername(raw) {
@@ -12,7 +12,7 @@ function normalizeUsername(raw) {
  * POST /tip/log
  * Log a tip transaction after it has been sent via wallet
  */
-router.post('/log', (req, res, next) => {
+router.post('/log', async (req, res, next) => {
   try {
     const { creatorHandle, tweetUrl, tipperWallet, amount, txSig } = req.body;
 
@@ -26,28 +26,45 @@ router.post('/log', (req, res, next) => {
     const username = normalizeUsername(creatorHandle);
 
     // 2. Check for duplicate txSig
-    const existing = db.prepare('SELECT id FROM tips WHERE tx_sig = ?').get(txSig);
+    const { data: existing } = await supabase
+      .from('tips')
+      .select('id')
+      .eq('tx_sig', txSig)
+      .single();
+
     if (existing) {
       throw { statusCode: 409, message: 'Transaction signature already logged' };
     }
 
     // 3. Insert into DB
-    const info = db.prepare(`
-      INSERT INTO tips (username, amount_sol, status, tweet_url, tipper_wallet, tx_sig)
-      VALUES (?, ?, 'pending', ?, ?, ?)
-    `).run(username, amount, tweetUrl, tipperWallet, txSig);
+    const { data: info, error } = await supabase
+      .from('tips')
+      .insert({
+        username,
+        amount_sol: amount,
+        status: 'pending',
+        tweet_url: tweetUrl,
+        tipper_wallet: tipperWallet,
+        tx_sig: txSig
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Supabase Insert Error:', error);
+      // Unique constraint violation check for Postgres (code 23505)
+      if (error.code === '23505') {
+         throw { statusCode: 409, message: 'Transaction signature already logged' };
+      }
+      throw { statusCode: 500, message: 'Failed to log tip' };
+    }
 
     // 4. Return success response
     res.status(201).json({
       success: true,
       message: 'Tip logged successfully',
-      tipId: info.lastInsertRowid,
-      data: {
-        username,
-        amount_sol: amount,
-        tx_sig: txSig,
-        status: 'pending'
-      }
+      tipId: info.id,
+      data: info
     });
 
   } catch (err) {
