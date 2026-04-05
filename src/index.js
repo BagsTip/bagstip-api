@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const errorHandler = require('./middleware/errorHandler');
 const claimRoutes = require('./routes/claim');
+const creatorRoutes = require('./routes/creator');
 
 // Initialize DB (creates tables on first run)
 require('./db');
@@ -28,6 +29,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/claim', claimRoutes);
+app.use('/creator', creatorRoutes);
 
 // ─── 404 handler ────────────────────────────────────────
 app.use((req, res) => {
