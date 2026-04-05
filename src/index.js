@@ -4,6 +4,7 @@ const express = require('express');
 const errorHandler = require('./middleware/errorHandler');
 const claimRoutes = require('./routes/claim');
 const creatorRoutes = require('./routes/creator');
+const tipRoutes = require('./routes/tip');
 
 // Initialize DB (creates tables on first run)
 require('./db');
@@ -30,6 +31,7 @@ app.get('/', (req, res) => {
 
 app.use('/claim', claimRoutes);
 app.use('/creator', creatorRoutes);
+app.use('/tip', tipRoutes);
 
 // ─── 404 handler ────────────────────────────────────────
 app.use((req, res) => {
