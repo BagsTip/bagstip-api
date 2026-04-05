@@ -226,6 +226,21 @@ router.post('/release', async (req, res, next) => {
       db.prepare(
         "UPDATE claim_attempts SET status = 'released', wallet_address = ? WHERE id = ?"
       ).run(walletAddress, attempt.id);
+
+      // Create or Update permanent Creator profile
+      const existingCreator = db.prepare('SELECT id FROM creators WHERE username = ?').get(username);
+      if (existingCreator) {
+        db.prepare(`
+          UPDATE creators 
+          SET wallet_address = ?, is_verified = 1, verified_at = ?
+          WHERE id = ?
+        `).run(walletAddress, now, existingCreator.id);
+      } else {
+        db.prepare(`
+          INSERT INTO creators (username, wallet_address, is_verified, verified_at)
+          VALUES (?, ?, 1, ?)
+        `).run(username, walletAddress, now);
+      }
     });
     updateAll();
 

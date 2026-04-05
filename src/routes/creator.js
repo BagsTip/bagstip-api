@@ -21,8 +21,14 @@ router.get('/:handle', (req, res, next) => {
       throw err;
     }
 
+    // Step 2: Query Creator Profile
+    const profile = db.prepare(`
+      SELECT wallet_address, is_verified, verified_at, created_at
+      FROM creators
+      WHERE username = ?
+    `).get(handle);
+
     // Step 3 & 4: Query Pending and Claimed Amounts
-    // Using a single query to get both sums for efficiency
     const stats = db.prepare(`
       SELECT 
         SUM(CASE WHEN status = 'pending' THEN amount_sol ELSE 0 END) as pendingAmount,
@@ -52,6 +58,8 @@ router.get('/:handle', (req, res, next) => {
     res.json({
       success: true,
       handle,
+      isVerified: profile ? !!profile.is_verified : false,
+      profileWallet: profile ? profile.wallet_address : null,
       pendingAmount: Math.round(pendingAmount * 1e6) / 1e6,
       claimedAmount: Math.round(claimedAmount * 1e6) / 1e6,
       tipsCount,
