@@ -1,39 +1,41 @@
 require('dotenv').config();
 
 const express = require('express');
+const cors = require('cors');
 const errorHandler = require('./middleware/errorHandler');
-const claimRoutes = require('./routes/claim');
-const creatorRoutes = require('./routes/creator');
-const tipRoutes = require('./routes/tip');
 
-// Initialize DB (creates tables on first run)
+// Routes
+const verifyRoutes = require('./routes/verify');
+const tipRoutes = require('./routes/tip');
+const profileRoutes = require('./routes/profile');
+const claimRoutes = require('./routes/claim');
+const dashboardRoutes = require('./routes/dashboard');
+
+// Initialize DB
 require('./db');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // ─── Middleware ──────────────────────────────────────────
+app.use(cors());
 app.use(express.json());
 
-// ─── Routes ─────────────────────────────────────────────
+// ─── Health Check ───────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({
-    name: 'BagsTip Claim API',
+    name: 'BagsTip API',
     version: '1.0.0',
-    status: 'running',
-    endpoints: {
-      'POST /tip/log': 'Log a tip transaction from frontend',
-      'GET /creator/:handle': 'Get creator dashboard stats',
-      'POST /claim/init': 'Start claim process — get verification code',
-      'POST /claim/verify': 'Verify X account ownership',
-      'POST /claim/release': 'Release funds from escrow to wallet',
-    },
+    status: 'running'
   });
 });
 
-app.use('/claim', claimRoutes);
-app.use('/creator', creatorRoutes);
-app.use('/tip', tipRoutes);
+// ─── Routes ─────────────────────────────────────────────
+app.use('/api/v1/verify', verifyRoutes);
+app.use('/api/v1/tip', tipRoutes);
+app.use('/api/v1/profile', profileRoutes);
+app.use('/api/v1/claim', claimRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
 
 // ─── 404 handler ────────────────────────────────────────
 app.use((req, res) => {
@@ -49,7 +51,7 @@ app.use(errorHandler);
 // ─── Start Server ───────────────────────────────────────
 app.listen(PORT, () => {
   console.log('');
-  console.log('🚀  BagsTip Claim API');
+  console.log('🚀  BagsTip Backend API (V1Spec)');
   console.log(`📡  http://localhost:${PORT}`);
   console.log(`🌍  Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('');

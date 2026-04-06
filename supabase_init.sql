@@ -1,38 +1,48 @@
--- 1. Create Tips Table
+-- Supabase Schema for BagsTip
+
+-- 1. Tipper Profiles
+CREATE TABLE tipper_profiles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  wallet_pubkey text UNIQUE NOT NULL,
+  x_handle text UNIQUE NOT NULL,
+  verified boolean DEFAULT false,
+  verification_code text,
+  code_expires_at timestamptz,
+  verified_at timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+
+-- 2. Creator Profiles
+CREATE TABLE creator_profiles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  wallet_pubkey text UNIQUE NOT NULL,
+  x_handle text UNIQUE NOT NULL,
+  verified boolean DEFAULT false,
+  verification_code text,
+  code_expires_at timestamptz,
+  verified_at timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+
+-- 3. Tips
 CREATE TABLE tips (
-  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-  username TEXT NOT NULL,
-  amount_sol DOUBLE PRECISION NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  tweet_url TEXT,
-  tipper_wallet TEXT,
-  tx_sig TEXT UNIQUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  claimed_at TIMESTAMPTZ
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tipper_wallet text,
+  tipper_x_handle text NOT NULL,
+  creator_x_handle text NOT NULL,
+  creator_wallet text,
+  amount_sol numeric NOT NULL,
+  amount_usd numeric,
+  source text NOT NULL, -- 'web' or 'bot'
+  status text NOT NULL, -- 'pending' | 'released' | 'failed'
+  tx_sig_inbound text,
+  tx_sig_release text,
+  created_at timestamptz DEFAULT now(),
+  released_at timestamptz
 );
 
--- 2. Create Creators Table
-CREATE TABLE creators (
-  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-  username TEXT NOT NULL UNIQUE,
-  wallet_address TEXT,
-  is_verified BOOLEAN DEFAULT FALSE,
-  verified_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 3. Create Claim Attempts Table
-CREATE TABLE claim_attempts (
-  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-  username TEXT NOT NULL,
-  verification_code TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  verified_at TIMESTAMPTZ,
-  expires_at TIMESTAMPTZ NOT NULL,
-  wallet_address TEXT
-);
-
--- 4. Create Indexes for faster queries
-CREATE INDEX idx_tips_username_status ON tips(username, status);
-CREATE INDEX idx_claims_username_status ON claim_attempts(username, status);
+-- Indexes for performance
+CREATE INDEX idx_tipper_profiles_x_handle ON tipper_profiles(x_handle);
+CREATE INDEX idx_creator_profiles_x_handle ON creator_profiles(x_handle);
+CREATE INDEX idx_tips_creator_x_handle_status ON tips(creator_x_handle, status);
+CREATE INDEX idx_tips_tipper_x_handle ON tips(tipper_x_handle);
